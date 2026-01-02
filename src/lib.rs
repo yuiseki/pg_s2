@@ -450,6 +450,12 @@ fn s2_cover_cap(
     SetOfIterator::new(iter)
 }
 
+#[pg_extern(stable, name = "s2_cover_cap")]
+fn s2_cover_cap_default(center: Point, radius_m: f64) -> SetOfIterator<'static, S2CellId> {
+    let level = DEFAULT_COVER_LEVEL.get();
+    s2_cover_cap(center, radius_m, level, DEFAULT_MAX_CELLS)
+}
+
 extension_sql!(
     r#"
 CREATE FUNCTION s2_cell_to_boundary(cell s2cellid)
@@ -976,6 +982,19 @@ mod tests {
             .map(s2_cell_to_token)
             .collect();
         got.sort();
+        assert_eq!(got, expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cover_cap_default_level() {
+        let center = Point { x: 11.77, y: 49.70 };
+        let radius_m = 2000.0;
+        let expected: Vec<String> = s2_cover_cap(center, radius_m, 12, 8)
+            .map(s2_cell_to_token)
+            .collect();
+        let got: Vec<String> = s2_cover_cap_default(center, radius_m)
+            .map(s2_cell_to_token)
+            .collect();
         assert_eq!(got, expected);
     }
 
