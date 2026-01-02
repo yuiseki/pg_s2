@@ -642,6 +642,27 @@ fn s2_cell_to_center_child_default(cell: S2CellId) -> S2CellId {
     s2_cell_to_center_child(cell, level as i32 + 1)
 }
 
+#[pg_extern(immutable)]
+fn s2_great_circle_distance(a: Point, b: Point, unit: &str) -> f64 {
+    let ll_a = LatLng::from_degrees(a.y, a.x);
+    let ll_b = LatLng::from_degrees(b.y, b.x);
+    if !ll_a.is_valid() || !ll_b.is_valid() {
+        error!("invalid latlng");
+    }
+    let angle = ll_a.distance(&ll_b).rad();
+    match unit.trim().to_ascii_lowercase().as_str() {
+        "m" => angle * EARTH_RADIUS_M,
+        "km" => angle * EARTH_RADIUS_M / 1000.0,
+        "rad" => angle,
+        _ => error!("invalid unit"),
+    }
+}
+
+#[pg_extern(immutable, name = "s2_great_circle_distance")]
+fn s2_great_circle_distance_default(a: Point, b: Point) -> f64 {
+    s2_great_circle_distance(a, b, "m")
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
@@ -1125,6 +1146,28 @@ mod tests {
         let got_list = got.unwrap_or_default();
         let expected_list = expected.join(",");
         assert_eq!(got_list, expected_list);
+    }
+
+    #[pg_test]
+    fn test_s2_great_circle_distance_units() {
+        let a = Point { x: 0.0, y: 0.0 };
+        let b = Point { x: 90.0, y: 0.0 };
+        let ll_a = LatLng::from_degrees(a.y, a.x);
+        let ll_b = LatLng::from_degrees(b.y, b.x);
+        let angle = ll_a.distance(&ll_b).rad();
+        let earth_radius = EARTH_RADIUS_M;
+        let expected_m = angle * earth_radius;
+        let expected_km = expected_m / 1000.0;
+
+        let got_m = s2_great_circle_distance(a, b, "m");
+        let got_km = s2_great_circle_distance(a, b, "km");
+        let got_default = s2_great_circle_distance_default(a, b);
+        let got_rad = s2_great_circle_distance(a, b, "rad");
+
+        assert!((got_m - expected_m).abs() < 1e-6);
+        assert!((got_km - expected_km).abs() < 1e-9);
+        assert!((got_default - expected_m).abs() < 1e-6);
+        assert!((got_rad - angle).abs() < 1e-12);
     }
 
     #[pg_test]
