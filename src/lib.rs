@@ -1,6 +1,7 @@
 use pgrx::callconv::{ArgAbi, BoxRet};
 use pgrx::datum::Datum;
 use pgrx::guc::{GucContext, GucFlags, GucRegistry, GucSetting};
+use pgrx::iter::SetOfIterator;
 use pgrx::pg_sys::Point;
 use pgrx::pg_sys::Oid;
 use pgrx::pgrx_sql_entity_graph::metadata::{
@@ -318,6 +319,34 @@ fn s2_cell_to_parent_default(cell: S2CellId) -> S2CellId {
     s2_cell_to_parent(cell, level as i32 - 1)
 }
 
+#[pg_extern(immutable)]
+fn s2_cell_to_children(cell: S2CellId, level: i32) -> SetOfIterator<'static, S2CellId> {
+    if !(0..=30).contains(&level) {
+        error!("invalid level");
+    }
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let cellid = CellID(raw);
+    let cell_level = cellid.level() as i32;
+    if level <= cell_level {
+        error!("invalid level");
+    }
+    let mut cur = cellid.child_begin_at_level(level as u64);
+    let end = cellid.child_end_at_level(level as u64);
+    let iter = std::iter::from_fn(move || {
+        if cur == end {
+            None
+        } else {
+            let out = S2CellId::from_u64(cur.0);
+            cur = cur.next();
+            Some(out)
+        }
+    });
+    SetOfIterator::new(iter)
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
@@ -520,6 +549,19 @@ mod tests {
         let cell = s2_cell_from_token(token);
         let got = s2_cell_to_parent_default(cell);
         assert_eq!(s2_cell_to_token(got), expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cell_to_children_level() {
+        let ll = LatLng::from_degrees(49.703498679, 11.770681595);
+        let cell_raw = CellID::from(ll).parent(10);
+        let level = cell_raw.level() as i32 + 1;
+        let expected: Vec<String> = cell_raw.children().iter().map(|c| c.to_token()).collect();
+        let cell = s2_cell_from_token(&cell_raw.to_token());
+        let got: Vec<String> = s2_cell_to_children(cell, level)
+            .map(s2_cell_to_token)
+            .collect();
+        assert_eq!(got, expected);
     }
 }
 
