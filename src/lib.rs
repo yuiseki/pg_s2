@@ -482,6 +482,29 @@ $$;
 
 extension_sql!(
     r#"
+CREATE FUNCTION s2_cover_rect_ranges(
+    rect box,
+    level integer,
+    max_cells integer DEFAULT 8
+)
+RETURNS SETOF int8range
+STABLE PARALLEL SAFE
+LANGUAGE SQL
+AS $$
+    SELECT int8range(
+        s2_cell_to_bigint(s2_cell_range_min(cell)),
+        s2_cell_to_bigint(s2_cell_range_max(cell)),
+        '[]'
+    )
+    FROM s2_cover_rect($1, $2, $3) AS cell
+$$;
+"#,
+    name = "s2_cover_rect_ranges",
+    requires = [s2_cover_rect, s2_cell_range_min, s2_cell_range_max, s2_cell_to_bigint],
+);
+
+extension_sql!(
+    r#"
 CREATE FUNCTION s2_cell_to_boundary(cell s2cellid)
 RETURNS polygon
 IMMUTABLE PARALLEL SAFE
@@ -1054,6 +1077,49 @@ mod tests {
             "SELECT string_agg(r::text, ',' ORDER BY r::text) \
              FROM s2_cover_cap_ranges(point({}, {}), {}::double precision, {}, {}) r",
             center.x, center.y, radius_m, level, max_cells
+        );
+        let got = Spi::get_one::<String>(&query).expect("spi");
+        let got_list = got.unwrap_or_default();
+        let expected_list = expected.join(",");
+        assert_eq!(got_list, expected_list);
+    }
+
+    #[pg_test]
+    fn test_s2_cover_rect_ranges_sql() {
+        let rect = pg_sys::BOX {
+            low: Point { x: 11.70, y: 49.68 },
+            high: Point { x: 11.82, y: 49.76 },
+        };
+        let level = 12i32;
+        let max_cells = 8i32;
+        let s2_rect = s2::rect::Rect::from_degrees(
+            rect.low.y,
+            rect.low.x,
+            rect.high.y,
+            rect.high.x,
+        );
+        let coverer = s2::region::RegionCoverer {
+            min_level: level as u8,
+            max_level: level as u8,
+            level_mod: 1,
+            max_cells: max_cells as usize,
+        };
+        let mut expected: Vec<String> = coverer
+            .covering(&s2_rect)
+            .0
+            .iter()
+            .map(|c| {
+                let min = u64_to_i64_norm(c.range_min().0);
+                let max = u64_to_i64_norm(c.range_max().0);
+                let max_exclusive = max.saturating_add(1);
+                format!("[{min},{max_exclusive})")
+            })
+            .collect();
+        expected.sort();
+        let query = format!(
+            "SELECT string_agg(r::text, ',' ORDER BY r::text) \
+             FROM s2_cover_rect_ranges(box(point({}, {}), point({}, {})), {}, {}) r",
+            rect.low.x, rect.low.y, rect.high.x, rect.high.y, level, max_cells
         );
         let got = Spi::get_one::<String>(&query).expect("spi");
         let got_list = got.unwrap_or_default();
