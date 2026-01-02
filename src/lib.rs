@@ -227,6 +227,23 @@ CREATE TYPE s2cellid (
     requires = ["shell_type", s2cellid_in, s2cellid_out],
 );
 
+extension_sql!(
+    r#"
+CREATE CAST (s2cellid AS text) WITH FUNCTION s2_cell_to_token(s2cellid);
+CREATE CAST (text AS s2cellid) WITH FUNCTION s2_cell_from_token(text);
+CREATE CAST (s2cellid AS bigint) WITH FUNCTION s2_cell_to_bigint(s2cellid);
+CREATE CAST (bigint AS s2cellid) WITH FUNCTION s2_cell_from_bigint(bigint);
+"#,
+    name = "s2cellid_casts",
+    requires = [
+        "concrete_type",
+        s2_cell_to_token,
+        s2_cell_from_token,
+        s2_cell_to_bigint,
+        s2_cell_from_bigint,
+    ],
+);
+
 #[pg_extern]
 fn s2_get_extension_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
@@ -1203,6 +1220,30 @@ mod tests {
         let got = s2_great_circle_distance(a, b, "m");
         let expected = angle * 1_000_000.0;
         assert!((got - expected).abs() < 1e-6);
+    }
+
+    #[pg_test]
+    fn test_s2_cellid_casts() {
+        let token = "47a1cbd595522b39";
+        let cast_token = Spi::get_one::<String>(&format!(
+            "SELECT ('{token}'::text::s2cellid)::text"
+        ))
+        .expect("spi");
+        assert_eq!(cast_token, Some(token.to_string()));
+
+        let cell = s2_cell_from_token(token);
+        let expected_bigint = s2_cell_to_bigint(cell);
+        let cast_bigint = Spi::get_one::<i64>(&format!(
+            "SELECT (s2_cell_from_token('{token}')::bigint)"
+        ))
+        .expect("spi");
+        assert_eq!(cast_bigint, Some(expected_bigint));
+
+        let cast_back = Spi::get_one::<String>(&format!(
+            "SELECT (CAST({expected_bigint} AS bigint)::s2cellid)::text"
+        ))
+        .expect("spi");
+        assert_eq!(cast_back, Some(token.to_string()));
     }
 
     #[pg_test]
