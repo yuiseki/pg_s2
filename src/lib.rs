@@ -3,6 +3,7 @@ use pgrx::datum::Datum;
 use pgrx::guc::{GucContext, GucFlags, GucRegistry, GucSetting};
 use pgrx::iter::SetOfIterator;
 use pgrx::pg_sys::Point;
+use pgrx::pg_sys::BOX;
 use pgrx::pg_sys::Oid;
 use pgrx::pgrx_sql_entity_graph::metadata::{
     ArgumentError, Returns, ReturnsError, SqlMapping, SqlTranslatable,
@@ -330,6 +331,29 @@ fn s2_cell_to_lat_lng(cell: S2CellId) -> Point {
         x: ll.lng.deg(),
         y: ll.lat.deg(),
     }
+}
+
+#[pg_extern(immutable)]
+fn s2_cell_bbox(cell: S2CellId) -> BOX {
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let rect = Cell::from(CellID(raw)).rect_bound();
+    let (lng_lo, lng_hi) = if rect.is_inverted() {
+        (-180.0, 180.0)
+    } else {
+        (rect.lng_lo().deg(), rect.lng_hi().deg())
+    };
+    let low = Point {
+        x: lng_lo,
+        y: rect.lat_lo().deg(),
+    };
+    let high = Point {
+        x: lng_hi,
+        y: rect.lat_hi().deg(),
+    };
+    BOX { low, high }
 }
 
 #[pg_extern(immutable)]
@@ -858,6 +882,18 @@ mod tests {
         let ll = s2_cell_to_lat_lng(cell);
         assert!((ll.y - 49.703498679).abs() < 1e-6);
         assert!((ll.x - 11.770681595).abs() < 1e-6);
+    }
+
+    #[pg_test]
+    fn test_s2_cell_bbox() {
+        let token = "47a1cbd595522b39";
+        let cell = s2_cell_from_token(token);
+        let bbox = s2_cell_bbox(cell);
+        let rect = Cell::from(CellID::from_token(token)).rect_bound();
+        assert!((bbox.low.x - rect.lng_lo().deg()).abs() < 1e-12);
+        assert!((bbox.low.y - rect.lat_lo().deg()).abs() < 1e-12);
+        assert!((bbox.high.x - rect.lng_hi().deg()).abs() < 1e-12);
+        assert!((bbox.high.y - rect.lat_hi().deg()).abs() < 1e-12);
     }
 
     #[pg_test]
