@@ -286,6 +286,24 @@ fn s2_cell_range_max(cell: S2CellId) -> S2CellId {
     S2CellId::from_u64(max.0)
 }
 
+#[pg_extern(immutable)]
+fn s2_cell_to_parent(cell: S2CellId, level: i32) -> S2CellId {
+    if !(0..=30).contains(&level) {
+        error!("invalid level");
+    }
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let cellid = CellID(raw);
+    let cell_level = cellid.level() as i32;
+    if level > cell_level {
+        error!("invalid level");
+    }
+    let parent = cellid.parent(level as u64);
+    S2CellId::from_u64(parent.0)
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
@@ -464,6 +482,18 @@ mod tests {
         let cell = s2_cell_from_token(token);
         let expected = CellID::from_token(token).range_max().to_token();
         let got = s2_cell_range_max(cell);
+        assert_eq!(s2_cell_to_token(got), expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cell_to_parent_level() {
+        let token = "47a1cbd595522b39";
+        let cell_raw = CellID::from_token(token);
+        assert!(cell_raw.level() > 0);
+        let level = cell_raw.level() as i32 - 1;
+        let expected = cell_raw.parent(level as u64).to_token();
+        let cell = s2_cell_from_token(token);
+        let got = s2_cell_to_parent(cell, level);
         assert_eq!(s2_cell_to_token(got), expected);
     }
 }
