@@ -1,5 +1,6 @@
 use pgrx::callconv::{ArgAbi, BoxRet};
 use pgrx::datum::Datum;
+use pgrx::guc::{GucContext, GucFlags, GucRegistry, GucSetting};
 use pgrx::pg_sys::Point;
 use pgrx::pg_sys::Oid;
 use pgrx::pgrx_sql_entity_graph::metadata::{
@@ -15,6 +16,28 @@ use std::ffi::CStr;
 
 const S2CELLID_ORDER_MASK: u64 = 0x8000_0000_0000_0000;
 const S2CELLID_LSB_MASK: u64 = 0x1555_5555_5555_5555;
+static DEFAULT_LEVEL: GucSetting<i32> = GucSetting::<i32>::new(14);
+static DEFAULT_LEVEL_NAME: &CStr =
+    unsafe { CStr::from_bytes_with_nul_unchecked(b"pg_s2.default_level\0") };
+static DEFAULT_LEVEL_SHORT: &CStr = unsafe {
+    CStr::from_bytes_with_nul_unchecked(b"Default S2 level for s2_lat_lng_to_cell(point).\0")
+};
+static DEFAULT_LEVEL_DESC: &CStr =
+    unsafe { CStr::from_bytes_with_nul_unchecked(b"Used when level is not explicitly provided.\0") };
+
+#[pg_guard]
+pub extern "C-unwind" fn _PG_init() {
+    GucRegistry::define_int_guc(
+        DEFAULT_LEVEL_NAME,
+        DEFAULT_LEVEL_SHORT,
+        DEFAULT_LEVEL_DESC,
+        &DEFAULT_LEVEL,
+        0,
+        30,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+}
 
 #[inline]
 fn u64_to_i64_norm(cellid: u64) -> i64 {
@@ -224,11 +247,18 @@ fn s2_lat_lng_to_cell(latlng: Point, level: i32) -> S2CellId {
     S2CellId::from_u64(cellid.0)
 }
 
+#[pg_extern(stable, name = "s2_lat_lng_to_cell")]
+fn s2_lat_lng_to_cell_default(latlng: Point) -> S2CellId {
+    let level = DEFAULT_LEVEL.get();
+    s2_lat_lng_to_cell(latlng, level)
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
     use super::*;
     use s2::latlng::LatLng;
+    use pgrx::spi::Spi;
 
     #[pg_test]
     fn test_s2_get_extension_version_matches_pkg() {
@@ -348,6 +378,27 @@ mod tests {
     #[should_panic(expected = "invalid level")]
     fn test_s2_lat_lng_to_cell_level_invalid() {
         let _ = s2_lat_lng_to_cell(Point { x: 0.0, y: 0.0 }, 31);
+    }
+
+    #[pg_test]
+    fn test_s2_lat_lng_to_cell_default_level() {
+        let lat = 49.703498679;
+        let lng = 11.770681595;
+        let expected = s2_lat_lng_to_cell(Point { x: lng, y: lat }, 14);
+
+        let got = s2_lat_lng_to_cell_default(Point { x: lng, y: lat });
+        assert_eq!(s2_cell_to_token(got), s2_cell_to_token(expected));
+    }
+
+    #[pg_test]
+    fn test_s2_lat_lng_to_cell_default_level_guc() {
+        let lat = 49.703498679;
+        let lng = 11.770681595;
+        Spi::run("SET pg_s2.default_level = 10").expect("set GUC");
+
+        let expected = s2_lat_lng_to_cell(Point { x: lng, y: lat }, 10);
+        let got = s2_lat_lng_to_cell_default(Point { x: lng, y: lat });
+        assert_eq!(s2_cell_to_token(got), s2_cell_to_token(expected));
     }
 }
 
