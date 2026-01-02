@@ -347,6 +347,20 @@ fn s2_cell_to_children(cell: S2CellId, level: i32) -> SetOfIterator<'static, S2C
     SetOfIterator::new(iter)
 }
 
+#[pg_extern(immutable, name = "s2_cell_to_children")]
+fn s2_cell_to_children_default(cell: S2CellId) -> SetOfIterator<'static, S2CellId> {
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let cellid = CellID(raw);
+    let level = cellid.level();
+    if level == 30 {
+        error!("invalid level");
+    }
+    s2_cell_to_children(cell, level as i32 + 1)
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
@@ -559,6 +573,18 @@ mod tests {
         let expected: Vec<String> = cell_raw.children().iter().map(|c| c.to_token()).collect();
         let cell = s2_cell_from_token(&cell_raw.to_token());
         let got: Vec<String> = s2_cell_to_children(cell, level)
+            .map(s2_cell_to_token)
+            .collect();
+        assert_eq!(got, expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cell_to_children_default() {
+        let ll = LatLng::from_degrees(49.703498679, 11.770681595);
+        let cell_raw = CellID::from(ll).parent(10);
+        let expected: Vec<String> = cell_raw.children().iter().map(|c| c.to_token()).collect();
+        let cell = s2_cell_from_token(&cell_raw.to_token());
+        let got: Vec<String> = s2_cell_to_children_default(cell)
             .map(s2_cell_to_token)
             .collect();
         assert_eq!(got, expected);
