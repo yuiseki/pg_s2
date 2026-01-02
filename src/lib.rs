@@ -266,10 +266,21 @@ fn s2_cell_to_lat_lng(cell: S2CellId) -> Point {
     }
 }
 
+#[pg_extern(immutable)]
+fn s2_cell_range_min(cell: S2CellId) -> S2CellId {
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let min = CellID(raw).range_min();
+    S2CellId::from_u64(min.0)
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
     use super::*;
+    use s2::cellid::CellID;
     use s2::latlng::LatLng;
     use pgrx::spi::Spi;
 
@@ -426,6 +437,15 @@ mod tests {
     #[should_panic(expected = "invalid s2cellid")]
     fn test_s2_cell_to_lat_lng_invalid() {
         let _ = s2_cell_to_lat_lng(s2_cell_from_bigint(0));
+    }
+
+    #[pg_test]
+    fn test_s2_cell_range_min() {
+        let token = "47a1cbd595522b39";
+        let cell = s2_cell_from_token(token);
+        let expected = CellID::from_token(token).range_min().to_token();
+        let got = s2_cell_range_min(cell);
+        assert_eq!(s2_cell_to_token(got), expected);
     }
 }
 
