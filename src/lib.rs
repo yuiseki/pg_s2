@@ -24,8 +24,9 @@ use std::ffi::CStr;
 const S2CELLID_ORDER_MASK: u64 = 0x8000_0000_0000_0000;
 const S2CELLID_LSB_MASK: u64 = 0x1555_5555_5555_5555;
 const DEFAULT_MAX_CELLS: i32 = 8;
-const EARTH_RADIUS_M: f64 = 6_371_010.0;
+const EARTH_RADIUS_M_DEFAULT: f64 = 6_371_008.8;
 static DEFAULT_LEVEL: GucSetting<i32> = GucSetting::<i32>::new(14);
+static EARTH_RADIUS_M: GucSetting<f64> = GucSetting::<f64>::new(EARTH_RADIUS_M_DEFAULT);
 static DEFAULT_LEVEL_NAME: &CStr =
     unsafe { CStr::from_bytes_with_nul_unchecked(b"pg_s2.default_level\0") };
 static DEFAULT_LEVEL_SHORT: &CStr = unsafe {
@@ -33,6 +34,16 @@ static DEFAULT_LEVEL_SHORT: &CStr = unsafe {
 };
 static DEFAULT_LEVEL_DESC: &CStr =
     unsafe { CStr::from_bytes_with_nul_unchecked(b"Used when level is not explicitly provided.\0") };
+static EARTH_RADIUS_M_NAME: &CStr =
+    unsafe { CStr::from_bytes_with_nul_unchecked(b"pg_s2.earth_radius_m\0") };
+static EARTH_RADIUS_M_SHORT: &CStr = unsafe {
+    CStr::from_bytes_with_nul_unchecked(b"Earth radius in meters for distance and cap conversions.\0")
+};
+static EARTH_RADIUS_M_DESC: &CStr = unsafe {
+    CStr::from_bytes_with_nul_unchecked(
+        b"Used to convert between meters and radians in s2_great_circle_distance and s2_cover_cap.\0",
+    )
+};
 static DEFAULT_COVER_LEVEL: GucSetting<i32> = GucSetting::<i32>::new(12);
 static DEFAULT_COVER_LEVEL_NAME: &CStr =
     unsafe { CStr::from_bytes_with_nul_unchecked(b"pg_s2.default_cover_level\0") };
@@ -52,6 +63,16 @@ pub extern "C-unwind" fn _PG_init() {
         &DEFAULT_LEVEL,
         0,
         30,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_float_guc(
+        EARTH_RADIUS_M_NAME,
+        EARTH_RADIUS_M_SHORT,
+        EARTH_RADIUS_M_DESC,
+        &EARTH_RADIUS_M,
+        0.0,
+        1.0e9,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -434,7 +455,7 @@ fn s2_cover_cap(
         error!("invalid latlng");
     }
     let center_point = S2Point::from(ll);
-    let angle = Angle::from(Rad(radius_m / EARTH_RADIUS_M));
+    let angle = Angle::from(Rad(radius_m / EARTH_RADIUS_M.get()));
     let cap = Cap::from_center_angle(&center_point, &angle);
     let coverer = RegionCoverer {
         min_level: level as u8,
@@ -650,9 +671,10 @@ fn s2_great_circle_distance(a: Point, b: Point, unit: &str) -> f64 {
         error!("invalid latlng");
     }
     let angle = ll_a.distance(&ll_b).rad();
+    let earth_radius = EARTH_RADIUS_M.get();
     match unit.trim().to_ascii_lowercase().as_str() {
-        "m" => angle * EARTH_RADIUS_M,
-        "km" => angle * EARTH_RADIUS_M / 1000.0,
+        "m" => angle * earth_radius,
+        "km" => angle * earth_radius / 1000.0,
         "rad" => angle,
         _ => error!("invalid unit"),
     }
@@ -1035,7 +1057,7 @@ mod tests {
         let max_cells = 8i32;
         let center_ll = LatLng::from_degrees(center.y, center.x);
         let center_point = s2::point::Point::from(center_ll);
-        let angle = s2::s1::Angle::from(s2::s1::Rad(radius_m / EARTH_RADIUS_M));
+        let angle = s2::s1::Angle::from(s2::s1::Rad(radius_m / EARTH_RADIUS_M.get()));
         let cap = s2::cap::Cap::from_center_angle(&center_point, &angle);
         let coverer = s2::region::RegionCoverer {
             min_level: level as u8,
@@ -1074,7 +1096,7 @@ mod tests {
         let max_cells = 8i32;
         let center_ll = LatLng::from_degrees(center.y, center.x);
         let center_point = s2::point::Point::from(center_ll);
-        let angle = s2::s1::Angle::from(s2::s1::Rad(radius_m / EARTH_RADIUS_M));
+        let angle = s2::s1::Angle::from(s2::s1::Rad(radius_m / EARTH_RADIUS_M.get()));
         let cap = s2::cap::Cap::from_center_angle(&center_point, &angle);
         let coverer = s2::region::RegionCoverer {
             min_level: level as u8,
@@ -1155,7 +1177,7 @@ mod tests {
         let ll_a = LatLng::from_degrees(a.y, a.x);
         let ll_b = LatLng::from_degrees(b.y, b.x);
         let angle = ll_a.distance(&ll_b).rad();
-        let earth_radius = EARTH_RADIUS_M;
+        let earth_radius = EARTH_RADIUS_M.get();
         let expected_m = angle * earth_radius;
         let expected_km = expected_m / 1000.0;
 
@@ -1168,6 +1190,19 @@ mod tests {
         assert!((got_km - expected_km).abs() < 1e-9);
         assert!((got_default - expected_m).abs() < 1e-6);
         assert!((got_rad - angle).abs() < 1e-12);
+    }
+
+    #[pg_test]
+    fn test_s2_great_circle_distance_guc() {
+        let a = Point { x: 0.0, y: 0.0 };
+        let b = Point { x: 90.0, y: 0.0 };
+        let ll_a = LatLng::from_degrees(a.y, a.x);
+        let ll_b = LatLng::from_degrees(b.y, b.x);
+        let angle = ll_a.distance(&ll_b).rad();
+        Spi::run("SET pg_s2.earth_radius_m = 1000000").expect("set GUC");
+        let got = s2_great_circle_distance(a, b, "m");
+        let expected = angle * 1_000_000.0;
+        assert!((got - expected).abs() < 1e-6);
     }
 
     #[pg_test]
