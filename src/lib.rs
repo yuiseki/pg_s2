@@ -458,6 +458,30 @@ fn s2_cover_cap_default(center: Point, radius_m: f64) -> SetOfIterator<'static, 
 
 extension_sql!(
     r#"
+CREATE FUNCTION s2_cover_cap_ranges(
+    center point,
+    radius_m double precision,
+    level integer,
+    max_cells integer DEFAULT 8
+)
+RETURNS SETOF int8range
+STABLE PARALLEL SAFE
+LANGUAGE SQL
+AS $$
+    SELECT int8range(
+        s2_cell_to_bigint(s2_cell_range_min(cell)),
+        s2_cell_to_bigint(s2_cell_range_max(cell)),
+        '[]'
+    )
+    FROM s2_cover_cap($1, $2, $3, $4) AS cell
+$$;
+"#,
+    name = "s2_cover_cap_ranges",
+    requires = [s2_cover_cap, s2_cell_range_min, s2_cell_range_max, s2_cell_to_bigint],
+);
+
+extension_sql!(
+    r#"
 CREATE FUNCTION s2_cell_to_boundary(cell s2cellid)
 RETURNS polygon
 IMMUTABLE PARALLEL SAFE
@@ -996,6 +1020,45 @@ mod tests {
             .map(s2_cell_to_token)
             .collect();
         assert_eq!(got, expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cover_cap_ranges_sql() {
+        let center = Point { x: 11.77, y: 49.70 };
+        let radius_m = 2000.0;
+        let level = 12i32;
+        let max_cells = 8i32;
+        let center_ll = LatLng::from_degrees(center.y, center.x);
+        let center_point = s2::point::Point::from(center_ll);
+        let angle = s2::s1::Angle::from(s2::s1::Rad(radius_m / EARTH_RADIUS_M));
+        let cap = s2::cap::Cap::from_center_angle(&center_point, &angle);
+        let coverer = s2::region::RegionCoverer {
+            min_level: level as u8,
+            max_level: level as u8,
+            level_mod: 1,
+            max_cells: max_cells as usize,
+        };
+        let mut expected: Vec<String> = coverer
+            .covering(&cap)
+            .0
+            .iter()
+            .map(|c| {
+                let min = u64_to_i64_norm(c.range_min().0);
+                let max = u64_to_i64_norm(c.range_max().0);
+                let max_exclusive = max.saturating_add(1);
+                format!("[{min},{max_exclusive})")
+            })
+            .collect();
+        expected.sort();
+        let query = format!(
+            "SELECT string_agg(r::text, ',' ORDER BY r::text) \
+             FROM s2_cover_cap_ranges(point({}, {}), {}::double precision, {}, {}) r",
+            center.x, center.y, radius_m, level, max_cells
+        );
+        let got = Spi::get_one::<String>(&query).expect("spi");
+        let got_list = got.unwrap_or_default();
+        let expected_list = expected.join(",");
+        assert_eq!(got_list, expected_list);
     }
 
     #[pg_test]
