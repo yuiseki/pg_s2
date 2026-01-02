@@ -1,0 +1,6 @@
+comment = 'pg_s2: S2 CellID functions'
+default_version = '@CARGO_VERSION@'
+module_pathname = 'pg_s2'
+relocatable = false
+superuser = true
+trusted = false
