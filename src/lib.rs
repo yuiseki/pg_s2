@@ -253,6 +253,19 @@ fn s2_lat_lng_to_cell_default(latlng: Point) -> S2CellId {
     s2_lat_lng_to_cell(latlng, level)
 }
 
+#[pg_extern(immutable)]
+fn s2_cell_to_lat_lng(cell: S2CellId) -> Point {
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let ll = LatLng::from(CellID(raw));
+    Point {
+        x: ll.lng.deg(),
+        y: ll.lat.deg(),
+    }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
@@ -399,6 +412,20 @@ mod tests {
         let expected = s2_lat_lng_to_cell(Point { x: lng, y: lat }, 10);
         let got = s2_lat_lng_to_cell_default(Point { x: lng, y: lat });
         assert_eq!(s2_cell_to_token(got), s2_cell_to_token(expected));
+    }
+
+    #[pg_test]
+    fn test_s2_cell_to_lat_lng() {
+        let cell = s2_cell_from_token("47a1cbd595522b39");
+        let ll = s2_cell_to_lat_lng(cell);
+        assert!((ll.y - 49.703498679).abs() < 1e-6);
+        assert!((ll.x - 11.770681595).abs() < 1e-6);
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "invalid s2cellid")]
+    fn test_s2_cell_to_lat_lng_invalid() {
+        let _ = s2_cell_to_lat_lng(s2_cell_from_bigint(0));
     }
 }
 
