@@ -9,11 +9,14 @@ use pgrx::pgrx_sql_entity_graph::metadata::{
 };
 use pgrx::prelude::*;
 use pgrx::{rust_regtypein, StringInfo};
+use s2::cap::Cap;
 use s2::cell::Cell;
 use s2::cellid::{CellID, NUM_FACES, POS_BITS};
 use s2::latlng::LatLng;
+use s2::point::Point as S2Point;
 use s2::region::RegionCoverer;
 use s2::rect::Rect;
+use s2::s1::{Angle, Rad};
 use std::ffi::CStr;
 
 ::pgrx::pg_module_magic!(name, version);
@@ -21,6 +24,7 @@ use std::ffi::CStr;
 const S2CELLID_ORDER_MASK: u64 = 0x8000_0000_0000_0000;
 const S2CELLID_LSB_MASK: u64 = 0x1555_5555_5555_5555;
 const DEFAULT_MAX_CELLS: i32 = 8;
+const EARTH_RADIUS_M: f64 = 6_371_010.0;
 static DEFAULT_LEVEL: GucSetting<i32> = GucSetting::<i32>::new(14);
 static DEFAULT_LEVEL_NAME: &CStr =
     unsafe { CStr::from_bytes_with_nul_unchecked(b"pg_s2.default_level\0") };
@@ -407,6 +411,43 @@ fn s2_cover_rect(
 fn s2_cover_rect_default(rect: pg_sys::BOX) -> SetOfIterator<'static, S2CellId> {
     let level = DEFAULT_COVER_LEVEL.get();
     s2_cover_rect(rect, level, DEFAULT_MAX_CELLS)
+}
+
+#[pg_extern(stable)]
+fn s2_cover_cap(
+    center: Point,
+    radius_m: f64,
+    level: i32,
+    max_cells: i32,
+) -> SetOfIterator<'static, S2CellId> {
+    if !(0..=30).contains(&level) {
+        error!("invalid level");
+    }
+    if max_cells <= 0 {
+        error!("invalid max_cells");
+    }
+    if radius_m < 0.0 {
+        error!("invalid radius");
+    }
+    let ll = LatLng::from_degrees(center.y, center.x);
+    if !ll.is_valid() {
+        error!("invalid latlng");
+    }
+    let center_point = S2Point::from(ll);
+    let angle = Angle::from(Rad(radius_m / EARTH_RADIUS_M));
+    let cap = Cap::from_center_angle(&center_point, &angle);
+    let coverer = RegionCoverer {
+        min_level: level as u8,
+        max_level: level as u8,
+        level_mod: 1,
+        max_cells: max_cells as usize,
+    };
+    let iter = coverer
+        .covering(&cap)
+        .0
+        .into_iter()
+        .map(|c| S2CellId::from_u64(c.0));
+    SetOfIterator::new(iter)
 }
 
 extension_sql!(
@@ -909,6 +950,32 @@ mod tests {
         Spi::run("SET pg_s2.default_cover_level = 10").expect("set GUC");
         let expected: Vec<String> = s2_cover_rect(rect, 10, 8).map(s2_cell_to_token).collect();
         let got: Vec<String> = s2_cover_rect_default(rect).map(s2_cell_to_token).collect();
+        assert_eq!(got, expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cover_cap_level() {
+        let center = Point { x: 11.77, y: 49.70 };
+        let radius_m = 2000.0;
+        let level = 12i32;
+        let max_cells = 8i32;
+        let center_ll = LatLng::from_degrees(center.y, center.x);
+        let center_point = s2::point::Point::from(center_ll);
+        let angle = s2::s1::Angle::from(s2::s1::Rad(radius_m / EARTH_RADIUS_M));
+        let cap = s2::cap::Cap::from_center_angle(&center_point, &angle);
+        let coverer = s2::region::RegionCoverer {
+            min_level: level as u8,
+            max_level: level as u8,
+            level_mod: 1,
+            max_cells: max_cells as usize,
+        };
+        let mut expected: Vec<String> =
+            coverer.covering(&cap).0.iter().map(|c| c.to_token()).collect();
+        expected.sort();
+        let mut got: Vec<String> = s2_cover_cap(center, radius_m, level, max_cells)
+            .map(s2_cell_to_token)
+            .collect();
+        got.sort();
         assert_eq!(got, expected);
     }
 
