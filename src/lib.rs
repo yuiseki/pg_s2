@@ -776,6 +776,18 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_s2cellid_sql_ordering() {
+        let a = "47a1cbd595522b39";
+        let b = "b09dff882a7809e1";
+        let expected = CellID::from_token(a).0 < CellID::from_token(b).0;
+        let got = Spi::get_one::<bool>(&format!(
+            "SELECT ('{a}'::text::s2cellid) < ('{b}'::text::s2cellid)"
+        ))
+        .expect("spi");
+        assert_eq!(got, Some(expected));
+    }
+
+    #[pg_test]
     fn test_s2_cell_token_roundtrip() {
         let token = "47a1cbd595522b39";
         let cell = s2_cell_from_token(token);
