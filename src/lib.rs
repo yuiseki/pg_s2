@@ -288,6 +288,31 @@ fn s2_cell_to_vertices(cell: S2CellId) -> Vec<Point> {
 }
 
 #[pg_extern(immutable)]
+fn s2_cell_edge_neighbors(cell: S2CellId) -> Vec<S2CellId> {
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let neighbors = CellID(raw).edge_neighbors();
+    neighbors.into_iter().map(|n| S2CellId::from_u64(n.0)).collect()
+}
+
+#[pg_extern(immutable)]
+fn s2_cell_all_neighbors(cell: S2CellId) -> Vec<S2CellId> {
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let cellid = CellID(raw);
+    let level = cellid.level();
+    cellid
+        .all_neighbors(level)
+        .into_iter()
+        .map(|n| S2CellId::from_u64(n.0))
+        .collect()
+}
+
+#[pg_extern(immutable)]
 fn s2_cell_range_min(cell: S2CellId) -> S2CellId {
     let raw = cell.to_u64();
     if !s2_cellid_is_valid_raw(raw) {
@@ -692,6 +717,44 @@ mod tests {
             assert!((a.x - b.x).abs() < 1e-6);
             assert!((a.y - b.y).abs() < 1e-6);
         }
+    }
+
+    #[pg_test]
+    fn test_s2_cell_edge_neighbors() {
+        let token = "47a1cbd595522b39";
+        let cell_raw = CellID::from_token(token);
+        let mut expected: Vec<String> = cell_raw
+            .edge_neighbors()
+            .iter()
+            .map(|c| c.to_token())
+            .collect();
+        expected.sort();
+        let cell = s2_cell_from_token(token);
+        let mut got: Vec<String> = s2_cell_edge_neighbors(cell)
+            .iter()
+            .map(|c| s2_cell_to_token(*c))
+            .collect();
+        got.sort();
+        assert_eq!(got, expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cell_all_neighbors() {
+        let token = "47a1cbd595522b39";
+        let cell_raw = CellID::from_token(token);
+        let mut expected: Vec<String> = cell_raw
+            .all_neighbors(cell_raw.level())
+            .iter()
+            .map(|c| c.to_token())
+            .collect();
+        expected.sort();
+        let cell = s2_cell_from_token(token);
+        let mut got: Vec<String> = s2_cell_all_neighbors(cell)
+            .iter()
+            .map(|c| s2_cell_to_token(*c))
+            .collect();
+        got.sort();
+        assert_eq!(got, expected);
     }
 }
 
