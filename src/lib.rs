@@ -276,6 +276,16 @@ fn s2_cell_range_min(cell: S2CellId) -> S2CellId {
     S2CellId::from_u64(min.0)
 }
 
+#[pg_extern(immutable)]
+fn s2_cell_range_max(cell: S2CellId) -> S2CellId {
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let max = CellID(raw).range_max();
+    S2CellId::from_u64(max.0)
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
@@ -445,6 +455,15 @@ mod tests {
         let cell = s2_cell_from_token(token);
         let expected = CellID::from_token(token).range_min().to_token();
         let got = s2_cell_range_min(cell);
+        assert_eq!(s2_cell_to_token(got), expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cell_range_max() {
+        let token = "47a1cbd595522b39";
+        let cell = s2_cell_from_token(token);
+        let expected = CellID::from_token(token).range_max().to_token();
+        let got = s2_cell_range_max(cell);
         assert_eq!(s2_cell_to_token(got), expected);
     }
 }
