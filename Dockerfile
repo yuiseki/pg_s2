@@ -27,12 +27,15 @@ RUN set -eux; \
 WORKDIR /workspace
 COPY Cargo.toml Cargo.lock* ./
 COPY pg_s2.control ./
-COPY src ./src
-COPY .forks ./ .forks
 
 RUN set -eux; \
   cargo install cargo-pgrx --version 0.16.1; \
-  cargo pgrx init --pg17 /usr/lib/postgresql/17/bin/pg_config; \
+  cargo pgrx init --pg17 /usr/lib/postgresql/17/bin/pg_config
+
+COPY .forks ./ .forks
+COPY src ./src
+
+RUN set -eux; \
   cargo pgrx install --release
 
 FROM pgvector/pgvector:0.8.1-pg17-trixie
