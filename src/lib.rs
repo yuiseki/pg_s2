@@ -9,6 +9,7 @@ use pgrx::pgrx_sql_entity_graph::metadata::{
 };
 use pgrx::prelude::*;
 use pgrx::{rust_regtypein, StringInfo};
+use s2::cell::Cell;
 use s2::cellid::{CellID, NUM_FACES, POS_BITS};
 use s2::latlng::LatLng;
 use std::ffi::CStr;
@@ -361,10 +362,44 @@ fn s2_cell_to_children_default(cell: S2CellId) -> SetOfIterator<'static, S2CellI
     s2_cell_to_children(cell, level as i32 + 1)
 }
 
+#[pg_extern(immutable)]
+fn s2_cell_to_center_child(cell: S2CellId, level: i32) -> S2CellId {
+    if !(0..=30).contains(&level) {
+        error!("invalid level");
+    }
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let cellid = CellID(raw);
+    let cell_level = cellid.level() as i32;
+    if level <= cell_level {
+        error!("invalid level");
+    }
+    let center = Cell::from(cellid).center();
+    let child = CellID::from(center).parent(level as u64);
+    S2CellId::from_u64(child.0)
+}
+
+#[pg_extern(immutable, name = "s2_cell_to_center_child")]
+fn s2_cell_to_center_child_default(cell: S2CellId) -> S2CellId {
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let cellid = CellID(raw);
+    let level = cellid.level();
+    if level == 30 {
+        error!("invalid level");
+    }
+    s2_cell_to_center_child(cell, level as i32 + 1)
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
     use super::*;
+    use s2::cell::Cell;
     use s2::cellid::CellID;
     use s2::latlng::LatLng;
     use pgrx::spi::Spi;
@@ -588,6 +623,32 @@ mod tests {
             .map(s2_cell_to_token)
             .collect();
         assert_eq!(got, expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cell_to_center_child_level() {
+        let ll = LatLng::from_degrees(49.703498679, 11.770681595);
+        let cell_raw = CellID::from(ll).parent(10);
+        let level = cell_raw.level() as i32 + 1;
+        let expected = CellID::from(Cell::from(cell_raw).center())
+            .parent(level as u64)
+            .to_token();
+        let cell = s2_cell_from_token(&cell_raw.to_token());
+        let got = s2_cell_to_center_child(cell, level);
+        assert_eq!(s2_cell_to_token(got), expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cell_to_center_child_default() {
+        let ll = LatLng::from_degrees(49.703498679, 11.770681595);
+        let cell_raw = CellID::from(ll).parent(10);
+        let level = cell_raw.level() as i32 + 1;
+        let expected = CellID::from(Cell::from(cell_raw).center())
+            .parent(level as u64)
+            .to_token();
+        let cell = s2_cell_from_token(&cell_raw.to_token());
+        let got = s2_cell_to_center_child_default(cell);
+        assert_eq!(s2_cell_to_token(got), expected);
     }
 }
 
