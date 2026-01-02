@@ -287,6 +287,44 @@ fn s2_cell_to_vertices(cell: S2CellId) -> Vec<Point> {
         .collect()
 }
 
+#[inline]
+fn format_polygon_points(points: &[Point]) -> String {
+    let mut out = String::new();
+    out.push('(');
+    for (idx, p) in points.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push('(');
+        out.push_str(&format!("{:.15}", p.x));
+        out.push(',');
+        out.push_str(&format!("{:.15}", p.y));
+        out.push(')');
+    }
+    out.push(')');
+    out
+}
+
+#[pg_extern(immutable)]
+fn s2_cell_boundary_text(cell: S2CellId) -> String {
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let verts = Cell::from(CellID(raw)).vertices();
+    let points: Vec<Point> = verts
+        .iter()
+        .map(|v| {
+            let ll = LatLng::from(*v);
+            Point {
+                x: ll.lng.deg(),
+                y: ll.lat.deg(),
+            }
+        })
+        .collect();
+    format_polygon_points(&points)
+}
+
 #[pg_extern(immutable)]
 fn s2_cell_edge_neighbors(cell: S2CellId) -> Vec<S2CellId> {
     let raw = cell.to_u64();
@@ -311,6 +349,18 @@ fn s2_cell_all_neighbors(cell: S2CellId) -> Vec<S2CellId> {
         .map(|n| S2CellId::from_u64(n.0))
         .collect()
 }
+
+extension_sql!(
+    r#"
+CREATE FUNCTION s2_cell_to_boundary(cell s2cellid)
+RETURNS polygon
+IMMUTABLE PARALLEL SAFE
+LANGUAGE SQL
+AS $$ SELECT s2_cell_boundary_text($1)::polygon $$;
+"#,
+    name = "s2_cell_to_boundary",
+    requires = [s2_cell_boundary_text],
+);
 
 #[pg_extern(immutable)]
 fn s2_cell_range_min(cell: S2CellId) -> S2CellId {
@@ -717,6 +767,37 @@ mod tests {
             assert!((a.x - b.x).abs() < 1e-6);
             assert!((a.y - b.y).abs() < 1e-6);
         }
+    }
+
+    #[pg_test]
+    fn test_s2_cell_boundary_text() {
+        let token = "47a1cbd595522b39";
+        let cell_raw = CellID::from_token(token);
+        let points: Vec<Point> = Cell::from(cell_raw)
+            .vertices()
+            .iter()
+            .map(|v| {
+                let ll = LatLng::from(*v);
+                Point {
+                    x: ll.lng.deg(),
+                    y: ll.lat.deg(),
+                }
+            })
+            .collect();
+        let expected = format_polygon_points(&points);
+        let cell = s2_cell_from_token(token);
+        let got = s2_cell_boundary_text(cell);
+        assert_eq!(got, expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cell_to_boundary_sql() {
+        let token = "47a1cbd595522b39";
+        let query = format!(
+            "SELECT s2_cell_to_boundary(s2_cell_from_token('{token}')) IS NOT NULL"
+        );
+        let got = Spi::get_one::<bool>(&query).expect("spi");
+        assert_eq!(got, Some(true));
     }
 
     #[pg_test]
