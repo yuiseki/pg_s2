@@ -1,5 +1,6 @@
 use pgrx::callconv::{ArgAbi, BoxRet};
 use pgrx::datum::Datum;
+use pgrx::pg_sys::Point;
 use pgrx::pg_sys::Oid;
 use pgrx::pgrx_sql_entity_graph::metadata::{
     ArgumentError, Returns, ReturnsError, SqlMapping, SqlTranslatable,
@@ -7,6 +8,7 @@ use pgrx::pgrx_sql_entity_graph::metadata::{
 use pgrx::prelude::*;
 use pgrx::{rust_regtypein, StringInfo};
 use s2::cellid::{CellID, NUM_FACES, POS_BITS};
+use s2::latlng::LatLng;
 use std::ffi::CStr;
 
 ::pgrx::pg_module_magic!(name, version);
@@ -209,10 +211,24 @@ fn s2_get_face(cell: S2CellId) -> i32 {
     CellID(raw).face() as i32
 }
 
+#[pg_extern(immutable)]
+fn s2_lat_lng_to_cell(latlng: Point, level: i32) -> S2CellId {
+    if !(0..=30).contains(&level) {
+        error!("invalid level");
+    }
+    let ll = LatLng::from_degrees(latlng.y, latlng.x);
+    if !ll.is_valid() {
+        error!("invalid latlng");
+    }
+    let cellid = CellID::from(ll).parent(level as u64);
+    S2CellId::from_u64(cellid.0)
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
     use super::*;
+    use s2::latlng::LatLng;
 
     #[pg_test]
     fn test_s2_get_extension_version_matches_pkg() {
@@ -314,6 +330,24 @@ mod tests {
         let face1 = s2_cell_from_token("3");
         assert_eq!(s2_get_level(face1), 0);
         assert_eq!(s2_get_face(face1), 1);
+    }
+
+    #[pg_test]
+    fn test_s2_lat_lng_to_cell_level() {
+        let lat = 49.703498679;
+        let lng = 11.770681595;
+        let level = 12i32;
+        let ll = LatLng::from_degrees(lat, lng);
+        let expected = CellID::from(ll).parent(level as u64).to_token();
+
+        let got = s2_lat_lng_to_cell(Point { x: lng, y: lat }, level);
+        assert_eq!(s2_cell_to_token(got), expected);
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "invalid level")]
+    fn test_s2_lat_lng_to_cell_level_invalid() {
+        let _ = s2_lat_lng_to_cell(Point { x: 0.0, y: 0.0 }, 31);
     }
 }
 
