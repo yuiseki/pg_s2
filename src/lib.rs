@@ -12,6 +12,8 @@ use pgrx::{rust_regtypein, StringInfo};
 use s2::cell::Cell;
 use s2::cellid::{CellID, NUM_FACES, POS_BITS};
 use s2::latlng::LatLng;
+use s2::region::RegionCoverer;
+use s2::rect::Rect;
 use std::ffi::CStr;
 
 ::pgrx::pg_module_magic!(name, version);
@@ -348,6 +350,37 @@ fn s2_cell_all_neighbors(cell: S2CellId) -> Vec<S2CellId> {
         .into_iter()
         .map(|n| S2CellId::from_u64(n.0))
         .collect()
+}
+
+#[pg_extern(stable)]
+fn s2_cover_rect(
+    rect: pg_sys::BOX,
+    level: i32,
+    max_cells: i32,
+) -> SetOfIterator<'static, S2CellId> {
+    if !(0..=30).contains(&level) {
+        error!("invalid level");
+    }
+    if max_cells <= 0 {
+        error!("invalid max_cells");
+    }
+    let lat_lo = rect.low.y.min(rect.high.y);
+    let lat_hi = rect.low.y.max(rect.high.y);
+    let lng_lo = rect.low.x.min(rect.high.x);
+    let lng_hi = rect.low.x.max(rect.high.x);
+    let s2_rect = Rect::from_degrees(lat_lo, lng_lo, lat_hi, lng_hi);
+    let coverer = RegionCoverer {
+        min_level: level as u8,
+        max_level: level as u8,
+        level_mod: 1,
+        max_cells: max_cells as usize,
+    };
+    let iter = coverer
+        .covering(&s2_rect)
+        .0
+        .into_iter()
+        .map(|c| S2CellId::from_u64(c.0));
+    SetOfIterator::new(iter)
 }
 
 extension_sql!(
@@ -798,6 +831,36 @@ mod tests {
         );
         let got = Spi::get_one::<bool>(&query).expect("spi");
         assert_eq!(got, Some(true));
+    }
+
+    #[pg_test]
+    fn test_s2_cover_rect_level() {
+        let rect = pg_sys::BOX {
+            low: Point { x: 11.70, y: 49.68 },
+            high: Point { x: 11.82, y: 49.76 },
+        };
+        let level = 12i32;
+        let max_cells = 8i32;
+        let s2_rect = s2::rect::Rect::from_degrees(
+            rect.low.y,
+            rect.low.x,
+            rect.high.y,
+            rect.high.x,
+        );
+        let coverer = s2::region::RegionCoverer {
+            min_level: level as u8,
+            max_level: level as u8,
+            level_mod: 1,
+            max_cells: max_cells as usize,
+        };
+        let mut expected: Vec<String> =
+            coverer.covering(&s2_rect).0.iter().map(|c| c.to_token()).collect();
+        expected.sort();
+        let mut got: Vec<String> = s2_cover_rect(rect, level, max_cells)
+            .map(s2_cell_to_token)
+            .collect();
+        got.sort();
+        assert_eq!(got, expected);
     }
 
     #[pg_test]
