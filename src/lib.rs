@@ -269,6 +269,25 @@ fn s2_cell_to_lat_lng(cell: S2CellId) -> Point {
 }
 
 #[pg_extern(immutable)]
+fn s2_cell_to_vertices(cell: S2CellId) -> Vec<Point> {
+    let raw = cell.to_u64();
+    if !s2_cellid_is_valid_raw(raw) {
+        error!("invalid s2cellid");
+    }
+    let verts = Cell::from(CellID(raw)).vertices();
+    verts
+        .iter()
+        .map(|v| {
+            let ll = LatLng::from(*v);
+            Point {
+                x: ll.lng.deg(),
+                y: ll.lat.deg(),
+            }
+        })
+        .collect()
+}
+
+#[pg_extern(immutable)]
 fn s2_cell_range_min(cell: S2CellId) -> S2CellId {
     let raw = cell.to_u64();
     if !s2_cellid_is_valid_raw(raw) {
@@ -649,6 +668,30 @@ mod tests {
         let cell = s2_cell_from_token(&cell_raw.to_token());
         let got = s2_cell_to_center_child_default(cell);
         assert_eq!(s2_cell_to_token(got), expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cell_to_vertices() {
+        let token = "47a1cbd595522b39";
+        let cell_raw = CellID::from_token(token);
+        let expected: Vec<Point> = Cell::from(cell_raw)
+            .vertices()
+            .iter()
+            .map(|v| {
+                let ll = LatLng::from(*v);
+                Point {
+                    x: ll.lng.deg(),
+                    y: ll.lat.deg(),
+                }
+            })
+            .collect();
+        let cell = s2_cell_from_token(token);
+        let got = s2_cell_to_vertices(cell);
+        assert_eq!(got.len(), expected.len());
+        for (a, b) in got.iter().zip(expected.iter()) {
+            assert!((a.x - b.x).abs() < 1e-6);
+            assert!((a.y - b.y).abs() < 1e-6);
+        }
     }
 }
 
