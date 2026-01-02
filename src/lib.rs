@@ -20,6 +20,7 @@ use std::ffi::CStr;
 
 const S2CELLID_ORDER_MASK: u64 = 0x8000_0000_0000_0000;
 const S2CELLID_LSB_MASK: u64 = 0x1555_5555_5555_5555;
+const DEFAULT_MAX_CELLS: i32 = 8;
 static DEFAULT_LEVEL: GucSetting<i32> = GucSetting::<i32>::new(14);
 static DEFAULT_LEVEL_NAME: &CStr =
     unsafe { CStr::from_bytes_with_nul_unchecked(b"pg_s2.default_level\0") };
@@ -28,6 +29,15 @@ static DEFAULT_LEVEL_SHORT: &CStr = unsafe {
 };
 static DEFAULT_LEVEL_DESC: &CStr =
     unsafe { CStr::from_bytes_with_nul_unchecked(b"Used when level is not explicitly provided.\0") };
+static DEFAULT_COVER_LEVEL: GucSetting<i32> = GucSetting::<i32>::new(12);
+static DEFAULT_COVER_LEVEL_NAME: &CStr =
+    unsafe { CStr::from_bytes_with_nul_unchecked(b"pg_s2.default_cover_level\0") };
+static DEFAULT_COVER_LEVEL_SHORT: &CStr = unsafe {
+    CStr::from_bytes_with_nul_unchecked(b"Default S2 level for s2_cover_rect(point).\0")
+};
+static DEFAULT_COVER_LEVEL_DESC: &CStr = unsafe {
+    CStr::from_bytes_with_nul_unchecked(b"Used when cover level is not explicitly provided.\0")
+};
 
 #[pg_guard]
 pub extern "C-unwind" fn _PG_init() {
@@ -36,6 +46,16 @@ pub extern "C-unwind" fn _PG_init() {
         DEFAULT_LEVEL_SHORT,
         DEFAULT_LEVEL_DESC,
         &DEFAULT_LEVEL,
+        0,
+        30,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        DEFAULT_COVER_LEVEL_NAME,
+        DEFAULT_COVER_LEVEL_SHORT,
+        DEFAULT_COVER_LEVEL_DESC,
+        &DEFAULT_COVER_LEVEL,
         0,
         30,
         GucContext::Userset,
@@ -381,6 +401,12 @@ fn s2_cover_rect(
         .into_iter()
         .map(|c| S2CellId::from_u64(c.0));
     SetOfIterator::new(iter)
+}
+
+#[pg_extern(stable, name = "s2_cover_rect")]
+fn s2_cover_rect_default(rect: pg_sys::BOX) -> SetOfIterator<'static, S2CellId> {
+    let level = DEFAULT_COVER_LEVEL.get();
+    s2_cover_rect(rect, level, DEFAULT_MAX_CELLS)
 }
 
 extension_sql!(
@@ -860,6 +886,29 @@ mod tests {
             .map(s2_cell_to_token)
             .collect();
         got.sort();
+        assert_eq!(got, expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cover_rect_default_level() {
+        let rect = pg_sys::BOX {
+            low: Point { x: 11.70, y: 49.68 },
+            high: Point { x: 11.82, y: 49.76 },
+        };
+        let expected: Vec<String> = s2_cover_rect(rect, 12, 8).map(s2_cell_to_token).collect();
+        let got: Vec<String> = s2_cover_rect_default(rect).map(s2_cell_to_token).collect();
+        assert_eq!(got, expected);
+    }
+
+    #[pg_test]
+    fn test_s2_cover_rect_default_level_guc() {
+        let rect = pg_sys::BOX {
+            low: Point { x: 11.70, y: 49.68 },
+            high: Point { x: 11.82, y: 49.76 },
+        };
+        Spi::run("SET pg_s2.default_cover_level = 10").expect("set GUC");
+        let expected: Vec<String> = s2_cover_rect(rect, 10, 8).map(s2_cell_to_token).collect();
+        let got: Vec<String> = s2_cover_rect_default(rect).map(s2_cell_to_token).collect();
         assert_eq!(got, expected);
     }
 
