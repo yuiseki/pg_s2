@@ -475,6 +475,14 @@ fn s2_cover_rect_default(rect: pg_sys::BOX) -> SetOfIterator<'static, S2CellId> 
     s2_cover_rect(rect, level, DEFAULT_MAX_CELLS)
 }
 
+#[pg_extern(stable, name = "s2_cover_rect")]
+fn s2_cover_rect_with_default_max_cells(
+    rect: pg_sys::BOX,
+    level: i32,
+) -> SetOfIterator<'static, S2CellId> {
+    s2_cover_rect(rect, level, DEFAULT_MAX_CELLS)
+}
+
 #[pg_extern(stable)]
 fn s2_cover_cap(
     center: Point,
@@ -515,6 +523,15 @@ fn s2_cover_cap(
 #[pg_extern(stable, name = "s2_cover_cap")]
 fn s2_cover_cap_default(center: Point, radius_m: f64) -> SetOfIterator<'static, S2CellId> {
     let level = DEFAULT_COVER_LEVEL.get();
+    s2_cover_cap(center, radius_m, level, DEFAULT_MAX_CELLS)
+}
+
+#[pg_extern(stable, name = "s2_cover_cap")]
+fn s2_cover_cap_with_default_max_cells(
+    center: Point,
+    radius_m: f64,
+    level: i32,
+) -> SetOfIterator<'static, S2CellId> {
     s2_cover_cap(center, radius_m, level, DEFAULT_MAX_CELLS)
 }
 

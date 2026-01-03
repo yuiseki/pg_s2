@@ -5,7 +5,7 @@ This is an early, MVP-oriented release focused on correctness and testability.
 
 ## Status
 
-- Version: v0.0.2
+- Version: v0.0.3
 - Scope: MVP-0 subset of SPEC.md (expanded)
 
 ## Features
@@ -22,6 +22,23 @@ This is an early, MVP-oriented release focused on correctness and testability.
 - Covering: `s2_cover_cap`, `s2_cover_rect`, `s2_cover_cap_ranges`, `s2_cover_rect_ranges`
 - Distance: `s2_great_circle_distance`
 - GUCs: `pg_s2.default_level`, `pg_s2.default_cover_level`, `pg_s2.earth_radius_m`
+
+## SPEC.md v0.1 MVP coverage
+
+This implementation targets **SPEC.md v0.1 MVP**. Mapping summary:
+
+- §7 Extension: `s2_get_extension_version`
+- §8 Indexing: `s2_lat_lng_to_cell`, `s2_cell_to_lat_lng`, `s2_cell_to_boundary`, `s2_cell_to_vertices`
+- §9 Inspection: `s2_is_valid_cell`, `s2_get_level`, `s2_get_face`, token/bigint conversions
+- §10 Hierarchy: parent/children/center_child, range min/max
+- §11 Traversal: edge/all neighbors
+- §12 Region: cap/rect covering + ranges
+- §13 Misc: `s2_great_circle_distance`
+- §14 Casts/operators/opclass: `s2cellid` casts, comparison ops, B-tree opclass
+- §15 GUCs: `pg_s2.default_level`, `pg_s2.default_cover_level`, `pg_s2.earth_radius_m`
+
+Notes:
+- `s2_cell_bbox` is implemented but not part of SPEC.md v0.1 MVP.
 
 ## Requirements
 
