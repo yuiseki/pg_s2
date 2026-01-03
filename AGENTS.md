@@ -22,3 +22,7 @@
 4. `make test` を実行
 5. コミット → tag（例: `v0.0.3`）→ push
 6. GitHub Release を作成（tag と同名）
+
+### ルール
+
+- 一度切ったバージョンは絶対に上書きしない（必ず version bump する）
