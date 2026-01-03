@@ -37,6 +37,19 @@ make test
 
 This builds the extension in a container and runs `cargo pgrx test` inside Docker.
 
+## Package (Docker)
+
+```
+make package
+```
+
+Artifacts are collected under `build/pg17` by default. To target a different
+PostgreSQL version:
+
+```
+PG_MAJOR=16 make package
+```
+
 ## Usage Examples
 
 ```sql
