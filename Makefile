@@ -1,12 +1,28 @@
 PG_MAJOR ?= 17
-PG_CONFIG ?= /usr/lib/postgresql/$(PG_MAJOR)/bin/pg_config
+PG_CONFIG ?= $(shell command -v pg_config 2>/dev/null)
 BUILD_DIR ?= build
-PGRX_HOME ?= /root/.pgrx
+PGRX_HOME ?= $(HOME)/.pgrx
 EXT_NAME := pg_s2
+VERSION ?= $(shell awk -F\" '/^version =/ {print $$2; exit}' Cargo.toml)
+DISTNAME ?= $(EXT_NAME)
+DISTVERSION ?= $(VERSION)
+PGXN_ZIP ?= $(BUILD_DIR)/$(DISTNAME)-$(DISTVERSION).zip
 DOCKER_COMPOSE ?= docker compose
 DEV_SERVICE ?= dev
 
-.PHONY: build test package compose-build build-in-container test-in-container package-in-container init-in-container clean
+.PHONY: all install package-local pgxn-zip build test package compose-build build-in-container test-in-container package-in-container init-in-container pgrx-init clean
+
+all: package-local
+
+install: pgrx-init
+	cargo pgrx install --release --pg-config "$(PG_CONFIG)"
+
+package-local: pgrx-init
+	cargo pgrx package --release --pg-config "$(PG_CONFIG)"
+
+pgxn-zip:
+	@mkdir -p $(BUILD_DIR)
+	git archive --format zip --prefix $(DISTNAME)-$(DISTVERSION)/ -o $(PGXN_ZIP) HEAD
 
 compose-build:
 	$(DOCKER_COMPOSE) build
@@ -20,10 +36,12 @@ test: compose-build
 package: compose-build
 	$(DOCKER_COMPOSE) run --rm $(DEV_SERVICE) bash -lc "make package-in-container"
 
-init-in-container:
+pgrx-init:
 	@if [ ! -d "$(PGRX_HOME)/pg$(PG_MAJOR)" ]; then \
 		cargo pgrx init --pg$(PG_MAJOR) $(PG_CONFIG); \
 	fi
+
+init-in-container: pgrx-init
 
 build-in-container: init-in-container
 	cargo pgrx install --release --pg-config $(PG_CONFIG)

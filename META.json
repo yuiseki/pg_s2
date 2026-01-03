@@ -1,16 +1,18 @@
 {
   "name": "pg_s2",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "abstract": "S2 Geometry extension for PostgreSQL",
   "maintainer": "Yui Matsumura <yuiseki@gmail.com>",
   "license": "mit",
   "provides": {
     "pg_s2": {
-      "file": "pg_s2.control",
-      "version": "0.0.4",
+      "file": "src/lib.rs",
+      "version": "0.0.5",
       "docfile": "README.md"
     }
   },
+  "tags": ["gis", "s2", "s2cellid", "spatial", "pgrx", "rust", "index"],
+  "release_status": "testing",
   "prereqs": {
     "runtime": {
       "requires": {

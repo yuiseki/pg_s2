@@ -5,7 +5,7 @@ This is an early, MVP-oriented release focused on correctness and testability.
 
 ## Status
 
-- Version: v0.0.4
+- Version: v0.0.5
 - Scope: MVP-0 subset of SPEC.md (expanded)
 
 ## Features
