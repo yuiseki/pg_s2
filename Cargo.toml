@@ -22,7 +22,7 @@ pg_test = []
 
 [dependencies]
 pgrx = "0.16.1"
-s2 = { path = ".forks/rust-s2" }
+s2 = "0.0.13"
 
 [dev-dependencies]
 pgrx-tests = "0.16.1"

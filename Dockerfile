@@ -36,7 +36,6 @@ RUN set -eux; \
   cargo install cargo-pgrx --version 0.16.1; \
   cargo pgrx init --pg${PG_MAJOR} /usr/lib/postgresql/${PG_MAJOR}/bin/pg_config
 
-COPY .forks ./ .forks
 COPY src ./src
 
 RUN set -eux; \

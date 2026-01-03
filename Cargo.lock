@@ -966,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "pg_s2"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "pgrx",
  "pgrx-tests",
@@ -1373,7 +1373,9 @@ dependencies = [
 
 [[package]]
 name = "s2"
-version = "0.0.12"
+version = "0.0.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23434007bcef0196e3f083834576ac004241f354001a22c61d2f2208c780e8df"
 dependencies = [
  "bigdecimal",
  "cgmath",
