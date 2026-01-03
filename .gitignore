@@ -1,3 +1,4 @@
 .forks/
+!.forks/.gitkeep
 target/
 MEMO.md
