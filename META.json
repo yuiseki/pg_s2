@@ -1,13 +1,13 @@
 {
   "name": "pg_s2",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "abstract": "S2 Geometry extension for PostgreSQL",
   "maintainer": "Yui Matsumura <yuiseki@gmail.com>",
   "license": "mit",
   "provides": {
     "pg_s2": {
       "file": "src/lib.rs",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "docfile": "README.md"
     }
   },

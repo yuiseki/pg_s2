@@ -18,7 +18,7 @@ install: pgrx-init
 	cargo pgrx install --release --pg-config "$(PG_CONFIG)"
 
 package-local: pgrx-init
-	cargo pgrx package --release --pg-config "$(PG_CONFIG)"
+	cargo pgrx package --pg-config "$(PG_CONFIG)"
 
 pgxn-zip:
 	@mkdir -p $(BUILD_DIR)
@@ -60,7 +60,7 @@ test-in-container: init-in-container
 	cargo pgrx test pg$(PG_MAJOR) --runas postgres --pgdata $$pgdata
 
 package-in-container: init-in-container
-	cargo pgrx package --release --pg-config $(PG_CONFIG)
+	cargo pgrx package --pg-config $(PG_CONFIG)
 	@mkdir -p $(BUILD_DIR)/pg$(PG_MAJOR)
 	@pkgdir=$$(find target/release -maxdepth 1 -type d -name "$(EXT_NAME)-pg$(PG_MAJOR)*" | head -n 1); \
 	test -n "$$pkgdir"; \

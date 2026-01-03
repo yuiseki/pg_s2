@@ -2,11 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## v0.0.5
+## v0.0.6
 
 - Add PG14 to CI matrix and declare PG14–17 support
 - PGXN metadata updates (META.json tags/release status, provides file path)
 - Add local `make install` and PGXN zip packaging targets
+- Fix `cargo pgrx package` invocation in Makefile (remove unsupported --release)
 
 ## v0.0.1
 
