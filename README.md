@@ -5,7 +5,7 @@ This is an early, MVP-oriented release focused on correctness and testability.
 
 ## Status
 
-- Version: v0.0.3
+- Version: v0.0.4
 - Scope: MVP-0 subset of SPEC.md (expanded)
 
 ## Features
@@ -42,7 +42,7 @@ Notes:
 
 ## Requirements
 
-- PostgreSQL 17
+- PostgreSQL 14–17
 - Rust toolchain (handled in Docker build)
 - Docker + docker compose
 
