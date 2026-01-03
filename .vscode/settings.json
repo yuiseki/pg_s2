@@ -1,6 +1,7 @@
 {
     "cSpell.words": [
         "antimeridian",
+        "bbox",
         "bigserial",
         "callconv",
         "cdylib",
@@ -21,6 +22,8 @@
         "rustup",
         "SETOF",
         "sharedir",
-        "trixie"
+        "trixie",
+        "Userset",
+        "verts"
     ]
 }
