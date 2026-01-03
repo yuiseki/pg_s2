@@ -14,3 +14,11 @@
 - `make test`
   - Docker ビルド → `cargo pgrx test` をコンテナ内で実行
 
+## バージョンアップ手順
+
+1. `Cargo.toml` の `version` を更新
+2. `META.json` の `version` / `provides.pg_s2.version` を更新
+3. `README.md` の Status Version を更新
+4. `make test` を実行
+5. コミット → tag（例: `v0.0.3`）→ push
+6. GitHub Release を作成（tag と同名）
