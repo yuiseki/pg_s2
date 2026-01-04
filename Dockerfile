@@ -42,12 +42,12 @@ RUN set -eux; \
 COPY Cargo.toml Cargo.lock* ./
 COPY pg_s2.control ./
 
-# Build dependencies with dummy source (cached unless Cargo.toml changes)
+# Build dependencies with proper dummy source (cached unless Cargo.toml changes)
 RUN set -eux; \
   mkdir -p src/bin; \
-  echo 'fn main() {}' > src/bin/pgrx_embed.rs; \
-  echo 'use pgrx::prelude::*; pgrx::pg_module_magic!();' > src/lib.rs; \
-  cargo build --release --lib; \
+  echo '::pgrx::pgrx_embed!();' > src/bin/pgrx_embed.rs; \
+  echo 'use pgrx::prelude::*; ::pgrx::pg_module_magic!();' > src/lib.rs; \
+  cargo build --release --lib || true; \
   rm -rf src
 
 # Copy actual source code
