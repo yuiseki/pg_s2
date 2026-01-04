@@ -28,16 +28,32 @@ RUN set -eux; \
   rustc --version; \
   cargo --version
 
+# Install cargo-pgrx early (independent of project files)
+RUN set -eux; \
+  cargo install cargo-pgrx --version 0.16.1
+
 WORKDIR /workspace
+
+# Initialize pgrx (independent of project files)
+RUN set -eux; \
+  cargo pgrx init --pg${PG_MAJOR} /usr/lib/postgresql/${PG_MAJOR}/bin/pg_config
+
+# Copy dependency files first
 COPY Cargo.toml Cargo.lock* ./
 COPY pg_s2.control ./
 
+# Build dependencies with dummy source (cached unless Cargo.toml changes)
 RUN set -eux; \
-  cargo install cargo-pgrx --version 0.16.1; \
-  cargo pgrx init --pg${PG_MAJOR} /usr/lib/postgresql/${PG_MAJOR}/bin/pg_config
+  mkdir -p src/bin; \
+  echo 'fn main() {}' > src/bin/pgrx_embed.rs; \
+  echo 'use pgrx::prelude::*; pgrx::pg_module_magic!();' > src/lib.rs; \
+  cargo build --release --lib; \
+  rm -rf src
 
+# Copy actual source code
 COPY src ./src
 
+# Build actual extension (only this layer rebuilds when src changes)
 RUN set -eux; \
   cargo pgrx install --release
 
